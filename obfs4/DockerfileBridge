@@ -1,0 +1,65 @@
+# Docker file to run the latest recommended version of Pluggable Transport
+# to help censored users.
+
+FROM debian:jessie
+MAINTAINER zz zz@123.com
+
+# make sure the system is up to date
+RUN apt-get update && apt-get upgrade -y
+
+# Install tor, obfs4 package
+# Install libcap2-bin to be able to assign port 80 to obfs4
+
+RUN apt-get update && apt-get install -y \
+        tor \        
+        obfs4proxy \
+        libcap2-bin \
+        vim\
+        pwgen\
+        --no-install-recommends
+
+# Let obfs4proxy use a lower <1024 port number (80)
+RUN setcap 'cap_net_bind_service=+ep' /usr/bin/obfs4proxy
+
+# Pick a nice name for your bridge
+#ENV BRIDGE_NAME enterbridgenamehere
+
+# You need to enter an email add in case someone wants to reach out to you
+# Not mandatory but highly recommended
+#ENV CONTACT_INFO your@email.address
+
+ENV  TOR_DIR=/tor 
+
+# Pick an ORPort
+ENV ORPORT 7000
+
+# open ORPort to the world. mainly for birdgeauth to get the running flag
+# ideally, we'll shut this port in future
+# see https://trac.torproject.org/projects/tor/ticket/7349
+
+EXPOSE ${ORPORT}
+
+# Open obfs port to the world.
+# obfs4 will listen to this port for incoming connections
+
+ENV OBFS_PORT 80
+EXPOSE ${OBFS_PORT}
+
+# Backup the original torrc file
+RUN mv /etc/tor/torrc /etc/tor/torrc.orig
+
+# Copy the base tor configuration file
+COPY ./config/torrc* /etc/tor/
+
+# Copy docker-entrypoint and the fingerprint script
+COPY ./scripts/ /usr/local/bin/
+
+RUN mkdir ${TOR_DIR}
+# Make a new torrc file for our new shiny bridge
+
+ENTRYPOINT ["docker-entrypoint"]
+
+# Restart Tor
+#RUN service tor restart
+
+#TODO: add automatic-updates

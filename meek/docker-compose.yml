@@ -1,0 +1,139 @@
+version: '2'
+services:
+ da1:
+  #image: antitree/private-tor
+  image: client:v1
+  expose:
+    - "7000"
+    - "9030"
+  environment:
+    ROLE: DA
+  volumes:
+    ## Needed to keep track of other nodes
+    - ./tor:/tor
+  command: tor -f /etc/tor/torrc
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.2
+ da2:
+  #image: antitree/private-tor
+  image: client:v1
+  expose:
+    - "7000"
+    - "9030"
+  environment:
+    ROLE: DA
+  volumes:
+    ## Needed to keep track of other nodes
+    - ./tor:/tor
+  command: tor -f /etc/tor/torrc
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.3
+ da3:
+  #image: antitree/private-tor
+  image: client:v1
+  expose:
+    - "7000"
+    - "9030"
+  environment:
+    ROLE: DA
+  volumes:
+    ## Needed to keep track of other nodes
+    - ./tor:/tor
+  command: tor -f /etc/tor/torrc
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.4
+ bridge:
+  #image: antitree/private-tor
+  image: meek:v1
+  expose:
+    - "7000"
+    - "7002"
+  environment:
+    ROLE: MEEK
+  volumes:
+    - ./tor:/tor
+  depends_on:
+    # Make sure the DA's are already up
+    - da1
+    - da2
+    - da3
+  build: 
+   context: ./
+   dockerfile: DockerfileBridge
+  #command: bash -c "service apache2 restart && tor -f /etc/tor/torrc"
+  command: tor -f /etc/tor/torrc 
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.5
+ exit:
+  #image: antitree/private-tor
+  image: client:v1
+  expose:
+    - "7000"
+    - "9030"
+  environment:
+    ROLE: EXIT
+  volumes:
+    - ./tor:/tor
+  depends_on:
+    # Make sure the DA's are already up
+    - da1
+    - da2
+    - da3
+  command: tor -f /etc/tor/torrc
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.6
+ client:
+  #image: antitree/private-tor
+  image: client:v1
+  ports:
+    # Setups a listener on host machine
+    - "9050:9050"
+    - "9051:9051"
+  volumes:
+    - ./tor:/tor
+  environment:
+    ROLE: CLIENT
+  depends_on: 
+    - da1
+    - da2
+    - da3
+  links:
+    - php
+  command: bash -c "cd /usr/local/share/ca-certificates && openssl s_client -connect 10.5.0.10:443 |tee test.crt && update-ca-certificates && tor -f /etc/tor/torrc"
+# command:  tor -f /etc/tor/torrc
+  build: 
+   context: ./
+   dockerfile: DockerfileClient
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.7
+ php:
+  image: php:v1
+  expose:
+    - "80"
+  #command: service apache2 start
+  #command: bash -c "cd /usr/local/share/ca-certificates && openssl s_client -connect 10.5.0.5:7002 |tee test.crt && update-ca-certificates && service apache2 start"
+  build: 
+   context: ./
+   dockerfile: DockerfilePHP
+  links:
+    - bridge
+
+  networks:
+      vpcbr:
+        ipv4_address: 10.5.0.10
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1
+    driver_opts:
+      com.docker.network.driver.mtu: 8960
+

@@ -1,0 +1,108 @@
+# Docker file to run the latest recommended version of Pluggable Transport
+# to help censored users.
+
+FROM debian:jessie
+MAINTAINER Antitree antitree@protonmail.com
+USER root
+# Sets which version of tor to use. See the Tor Projects git page for available tags
+# Examples:
+#  * tor-0.2.8.4-rc
+#  * tor-0.2.7.6
+#  * tor-0.2.7.5
+#  * release-0.2.1
+ENV TOR_VER="master"
+#ENV TOR_VER="master"
+# NOTE sometimes the master branch doesn't compile so I'm sticking with the release
+#  feel free to change this to master to get the latest and greatest
+
+# Sets the nickname if you didn't set one, default ports, and the path
+#  where to mount the key material used by the clients. 
+ENV TERM=xterm \
+    TOR_ORPORT=7000 \
+    TOR_DIRPORT=9030 \
+    TOR_DIR=/tor 
+
+# Install build dependencies
+RUN apt-get update && apt-get upgrade -y
+
+# Install tor, obfs4 package
+# Install libcap2-bin to be able to assign port 80 to obfs4
+
+# Install build dependencies
+RUN apt-get update && \
+    build_temps="build-essential automake" && \ 
+    build_deps="libssl-dev zlib1g-dev libevent-dev ca-certificates\
+        dh-apparmor libseccomp-dev dh-systemd \
+        git" && \
+    DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install $build_deps $build_temps \
+        init-system-helpers \
+        pwgen && \
+    mkdir /src && \
+    cd /src && \
+    git clone https://github.com/torproject/tor.git && \
+    cd tor && \
+    git checkout ${TOR_VER} && \
+    ./autogen.sh && \
+    ./configure --disable-asciidoc && \
+    make && \
+    make install && \
+    apt-get -y purge --auto-remove $build_temps && \
+    apt-get clean && rm -r /var/lib/apt/lists/* && \
+    rm -rf /src/* 
+
+  RUN apt-get update && apt-get install -y \
+        vim\
+        iptables\
+        golang-go \
+      --no-install-recommends
+
+
+
+RUN apt-get update && apt-get install -y \
+        wget \
+         curl \        
+      --no-install-recommends
+
+ENV  TOR_DIR=/tor 
+
+RUN git clone https://github.com/lupk123/meek.git && \
+cd meek/meek-client && \
+mkdir /tmp/meek && \
+export GOPATH=/tmp/meek  && \
+go get -d github.com/Yawning/goptlib &&\
+go build 
+  
+RUN  cd meek/meek-client && \
+cp meek-client /usr/local/bin
+
+# Pick an ORPort
+ENV ORPORT 7000
+
+# open ORPort to the world. mainly for birdgeauth to get the running flag
+# ideally, we'll shut this port in future
+# see https://trac.torproject.org/projects/tor/ticket/7349
+
+EXPOSE ${ORPORT}
+
+# Open obfs port to the world.
+# obfs4 will listen to this port for incoming connections
+
+
+# Backup the original torrc file
+#RUN mv /etc/tor/torrc /etc/tor/torrc.orig
+
+# Copy the base tor configuration file
+COPY ./config/torrc* /etc/tor/
+
+# Copy docker-entrypoint and the fingerprint script
+COPY ./scripts/ /usr/local/bin/
+
+RUN mkdir ${TOR_DIR}
+# Make a new torrc file for our new shiny bridge
+
+EXPOSE  9001 9030 9050 9051
+
+ENTRYPOINT ["docker-entrypoint"]
+
+# Restart Tor
+#TODO: add automatic-updates
